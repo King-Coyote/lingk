@@ -12,23 +12,31 @@ pub mod chain;
 
 fn main() {
     println!("Welcome to lingk, a markov chain language-imitating... thing.");
-    let mut model: Option<Chain> = None;
+    let mut model: Option<Box<Chain>> = None;
     do_while_input(|input| {
         let cmd_args: Vec<&str> = input.trim().split(' ').collect();
         match cmd_args.get(0) {
             Some(&"new") => {
-                model = Some(Chain::default());
+                model = Some(Box::new(Chain::default()));
                 println!("Now using a chain model, congratulations King xoxo");
             },
             Some(&"feed") => feed(&cmd_args, &mut model, &CharTokenizer),
             Some(&"quit") => return None,
+            Some(&"") => {
+                if let Some(ref mut model_inner) = model {
+                    if !model_inner.is_calculated() {
+                        model_inner.calculate();
+                    }
+                    println!("{}", model_inner.generate());
+                }
+            },
             _ => {}
         };
         Some(())
     });
 }
 
-fn feed<T>(cmd_args: &[&str], model: &mut Option<Chain>, tokenizer: &T)
+fn feed<T>(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &T)
 where
     T: Tokenizer
 {                

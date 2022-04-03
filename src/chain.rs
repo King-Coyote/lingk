@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use rand::prelude::*;
 use crate::token::Token;
+use crate::util::*;
 
 struct Node {
     data: Token,
@@ -22,7 +23,7 @@ impl Node {
     pub fn link(&mut self, token: Token) {
         *self.links
             .entry(token)
-            .or_insert(1)
+            .or_insert(0)
             += 1;
         self.total += 1;
     }
@@ -43,14 +44,11 @@ impl Node {
         self.weights = Some(weights);
     }
 
-    pub fn choose(&mut self) -> Option<Token> {
+    pub fn choose(&self) -> Option<Token> {
         let n: f32 = rand::thread_rng().gen();
-        if self.weights.is_none() {
-            self.calculate();
-        }
-        self.weights.as_ref().unwrap()
+        self.weights.as_ref().expect("Weights requested before calculation")
             .iter()
-            .find(|(_, w)| *w < n)
+            .find(|(_, w)| n <= *w)
             .map(|(t, _)| t.clone())
     }
 }
@@ -58,17 +56,74 @@ impl Node {
 #[derive(Default)]
 pub struct Chain {
     nodes: HashMap<Token, Node>,
+    is_calculated: bool,
 }
 
 impl Chain {
     pub fn feed(&mut self, data: Vec<Token>) {
         let mut prev: Option<&mut Node> = None;
+        self.is_calculated = false;
         for token in data.iter() {
+            if let Some(ref mut prev_node) = prev {
+                prev_node.link(token.clone());
+            }
             let node = self.nodes
                 .entry(token.clone())
                 .or_insert_with(|| Node::new(token.clone()));
             prev = Some(node);
         }
     }
+
+    pub fn calculate(&mut self) {
+        for node in self.nodes.values_mut() {
+            node.calculate();
+        }
+        self.is_calculated = true;
+    }
+
+    pub fn generate(&self) -> String {
+        assert!(self.is_calculated);
+        let mut token = Token::Start;
+        let mut value = "".to_string();
+        while token != Token::End {
+            let node = self.nodes.get(&token).expect("Node not found for token!");
+            value.push_str(&token.to_string());
+            token = node.choose().expect("No token chosen by node!");
+        }
+        value
+    }
+
+    pub fn is_calculated(&self) -> bool {
+        self.is_calculated
+    }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token::*;
+
+    #[test]
+    fn nodes_link_correctly() {
+        let mut node = Node::new(Token::Start);
+        node.link(Token::End);
+        assert!(node.total == 1);
+        let count = node.links.get(&Token::End).unwrap();
+        assert!(*count == 1);
+    }
+
+    #[test]
+    fn nodes_calculate_correctly() {
+        let mut node = Node::new(Token::Start);
+        node.link(Token::Char('a'));
+        node.link(Token::Char('a'));
+        node.link(Token::Char('a'));
+        node.link(Token::Char('b'));
+        node.calculate();
+
+        let weights = node.weights.expect("Node should have weights");
+        assert!(weights.len() == 2);
+        assert!(float_eq(weights.get(0).unwrap().1, 0.25));
+        assert!(float_eq(weights.get(1).unwrap().1, 1.0));
+    }
+}
