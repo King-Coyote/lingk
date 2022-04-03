@@ -21,13 +21,13 @@ impl ToString for Token {
     }
 }
 
-// simple tokenizer for characters only
+// simple tokenizer for characters only. Always makes everything lowercase
 pub struct CharTokenizer;
 
 impl Tokenizer for CharTokenizer {
     fn tokenize(&self, data: &str) -> Vec<Token> {
         let mut tokens = vec![Token::Start];
-        tokens.extend(data.chars().map(Token::Char));
+        tokens.extend(data.to_lowercase().chars().map(Token::Char));
         tokens.push(Token::End);
         tokens
     }

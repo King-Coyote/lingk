@@ -1,4 +1,6 @@
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
+use std::path::Path;
 
 use token::Tokenizer;
 
@@ -21,6 +23,8 @@ fn main() {
                 println!("Now using a chain model, congratulations King xoxo");
             },
             Some(&"feed") => feed(&cmd_args, &mut model, &CharTokenizer),
+            Some(&"file") => file(&cmd_args, &mut model),
+            Some(&"gen") => generate_n(&cmd_args, &mut model),
             Some(&"quit") => return None,
             Some(&"") => {
                 if let Some(ref mut model_inner) = model {
@@ -34,6 +38,44 @@ fn main() {
         };
         Some(())
     });
+}
+
+fn generate_n(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
+    //defaulting to 1 because I am lazy and need to refactor all these fns
+    let n = cmd_args.get(1)
+        .map(|arg| arg.parse::<i32>().unwrap_or(1))
+        .or(Some(1))
+        .unwrap();
+    if let Some(ref mut model_inner) = model {
+        for _ in 0..n {
+            if !model_inner.is_calculated() {
+                model_inner.calculate();
+            }
+            println!("{}", model_inner.generate());
+        }
+    }
+}
+
+fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
+    if cmd_args.get(1).is_none() {
+        println!("No filename provided. Please provide a file for feeding.");
+        return;
+    }
+    if model.is_none() {
+        println!("No model is currently loaded. Please load or initialise a model before feeding.");
+        return;
+    }
+    let model_inner = model.as_mut().unwrap();
+    let path = Path::new(cmd_args.get(1).unwrap());
+    let file = File::open(path);
+    if let Ok(lines) = file.map(|f| BufReader::new(f).lines()) {
+        for line in lines.filter(|l| l.is_ok()).map(|l| l.unwrap()) {
+            model_inner.feed(CharTokenizer.tokenize(&line));
+        }
+    } else {
+        println!("File does not exist. u idiot. u rascal");
+        return;
+    }
 }
 
 fn feed<T>(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &T)
