@@ -74,7 +74,6 @@ fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
         }
     } else {
         println!("File does not exist. u idiot. u rascal");
-        return;
     }
 }
 

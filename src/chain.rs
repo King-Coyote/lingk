@@ -85,9 +85,19 @@ impl Chain {
         assert!(self.is_calculated);
         let mut token = Token::Start;
         let mut value = "".to_string();
+        let mut last_token_val: String = "".to_owned();
+        let mut last_token_count = 0;
         while token != Token::End {
             let node = self.nodes.get(&token).expect("Node not found for token!");
-            value.push_str(&token.to_string());
+            if last_token_val == token.to_string() {
+                last_token_count += 1;
+            } else {
+                last_token_count = 0;
+            }
+            if last_token_count < 2 {
+                value.push_str(&token.to_string());
+            }
+            last_token_val = token.to_string();
             token = node.choose().expect("No token chosen by node!");
         }
         value
