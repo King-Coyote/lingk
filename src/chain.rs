@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use rand::prelude::*;
+use serde::Serialize;
 use crate::token::Token;
 use crate::util::*;
 
+#[serde_with::serde_as]
+#[derive(Serialize)]
 struct Node {
     data: Token,
+    #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
     links: HashMap<Token, u32>,
     weights: Option<Vec<(Token, f32)>>,
     total: u32,
@@ -53,8 +57,10 @@ impl Node {
     }
 }
 
-#[derive(Default)]
+#[serde_with::serde_as]
+#[derive(Default, Serialize)]
 pub struct Chain {
+    #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
     nodes: HashMap<Token, Node>,
     is_calculated: bool,
 }

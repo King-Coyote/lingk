@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
@@ -25,6 +25,12 @@ fn main() {
             Some(&"feed") => feed(&cmd_args, &mut model, &CharTokenizer),
             Some(&"file") => file(&cmd_args, &mut model),
             Some(&"gen") => generate_n(&cmd_args, &mut model),
+            Some(&"save") => {
+                match save(&cmd_args, &model) {
+                    Err(error) => println!("Saving failed: {}", error),
+                    Ok(()) => println!("Saved successfully!")
+                };
+            },
             Some(&"quit") => return None,
             Some(&"") => {
                 if let Some(ref mut model_inner) = model {
@@ -38,6 +44,14 @@ fn main() {
         };
         Some(())
     });
+}
+
+fn save(cmd_args: &[&str], model: &Option<Box<Chain>>) -> Result<(), String> {
+    let filename = cmd_args.get(1).ok_or("filename not provided")?;
+    let model = model.as_ref().ok_or("no model provided")?;
+    let json = serde_json::to_string(&model).map_err(|e| e.to_string())?;
+    fs::write(filename, json).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn generate_n(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
@@ -75,6 +89,7 @@ fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
     } else {
         println!("File does not exist. u idiot. u rascal");
     }
+    println!("File read successfully.");
 }
 
 fn feed<T>(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &T)

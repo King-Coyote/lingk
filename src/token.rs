@@ -1,7 +1,8 @@
 use std::string::ToString;
+use serde::Serialize;
 
 
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize)]
 pub enum Token {
     Start,
     Char(char),
