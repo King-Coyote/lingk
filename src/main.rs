@@ -7,32 +7,55 @@ use token::Tokenizer;
 use crate::token::CharTokenizer;
 use crate::util::*;
 use crate::chain::Chain;
+use crate::error::Error;
 
 pub mod token;
 pub mod util;
 pub mod chain;
+pub mod error;
 
 fn main() {
     println!("Welcome to lingk, a markov chain language-imitating... thing.");
     let mut model: Option<Box<Chain>> = None;
     do_while_input(|input| {
         let cmd_args: Vec<&str> = input.trim().split(' ').collect();
-        match cmd_args.get(0) {
-            Some(&"new") => {
+        match *cmd_args.get(0).unwrap_or(&"") {
+            "new" => {
                 model = Some(Box::new(Chain::default()));
-                println!("Now using a chain model, congratulations King xoxo");
+                println!("New chain model initialised, congratulations King xoxo");
             },
-            Some(&"feed") => feed(&cmd_args, &mut model, &CharTokenizer),
-            Some(&"file") => file(&cmd_args, &mut model),
-            Some(&"gen") => generate_n(&cmd_args, &mut model),
-            Some(&"save") => {
+            "feed" => {
+                if let Err(e) = feed(&cmd_args, &mut model, &CharTokenizer) {
+                    println!("feeding failed: {}", e);
+                }
+            },
+            "file" => {
+                if let Err(e) = file(&cmd_args, &mut model) {
+                    println!("file reading failed: {}", e);
+                }
+            },
+            "gen" => {
+                if let Err(e) = generate_n(&cmd_args, &mut model) {
+                    println!("Generation failed: {}", e);
+                }
+            },
+            "save" => {
                 match save(&cmd_args, &model) {
-                    Err(error) => println!("Saving failed: {}", error),
+                    Err(e) => println!("Saving failed: {}", e),
                     Ok(()) => println!("Saved successfully!")
                 };
             },
-            Some(&"quit") => return None,
-            Some(&"") => {
+            "load" => {
+                match load(&cmd_args) {
+                    Ok(loaded) => {
+                        model = Some(loaded);
+                        println!("Loaded model successfully!");
+                    },
+                    Err(e) => println!("Loading failed: {}", e),
+                };
+            },
+            "quit" => return None,
+            "" => {
                 if let Some(ref mut model_inner) = model {
                     if !model_inner.is_calculated() {
                         model_inner.calculate();
@@ -40,26 +63,31 @@ fn main() {
                     println!("{}", model_inner.generate());
                 }
             },
-            _ => {}
+            _ => println!("Unrecognized command.")
         };
         Some(())
     });
 }
 
-fn save(cmd_args: &[&str], model: &Option<Box<Chain>>) -> Result<(), String> {
-    let filename = cmd_args.get(1).ok_or("filename not provided")?;
-    let model = model.as_ref().ok_or("no model provided")?;
-    let json = serde_json::to_string(&model).map_err(|e| e.to_string())?;
-    fs::write(filename, json).map_err(|e| e.to_string())?;
+fn save(cmd_args: &[&str], model: &Option<Box<Chain>>) -> Result<(), Error> {
+    let filename = cmd_args.get(1).ok_or(Error::MissingArg("filename"))?;
+    let model = model.as_ref().ok_or(Error::NoModel)?;
+    let json = serde_json::to_string(&model)?;
+    fs::write(filename, json)?;
     Ok(())
 }
 
-fn generate_n(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
-    //defaulting to 1 because I am lazy and need to refactor all these fns
+fn load(cmd_args: &[&str]) -> Result<Box<Chain>, Error> {
+    let filename = cmd_args.get(1).ok_or(Error::MissingArg("filename"))?;
+    let data = fs::read_to_string(&filename)?;
+    let model = serde_json::from_str(&data)?;
+    Ok(model)
+}
+
+fn generate_n(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> {
     let n = cmd_args.get(1)
-        .map(|arg| arg.parse::<i32>().unwrap_or(1))
-        .or(Some(1))
-        .unwrap();
+        .map(|arg| arg.parse::<i32>())
+        .ok_or(Error::MissingArg("num to generate"))??;
     if let Some(ref mut model_inner) = model {
         for _ in 0..n {
             if !model_inner.is_calculated() {
@@ -68,40 +96,29 @@ fn generate_n(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
             println!("{}", model_inner.generate());
         }
     }
+    Ok(())
 }
 
-fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) {
-    if cmd_args.get(1).is_none() {
-        println!("No filename provided. Please provide a file for feeding.");
-        return;
-    }
-    if model.is_none() {
-        println!("No model is currently loaded. Please load or initialise a model before feeding.");
-        return;
-    }
-    let model_inner = model.as_mut().unwrap();
-    let path = Path::new(cmd_args.get(1).unwrap());
-    let file = File::open(path);
-    if let Ok(lines) = file.map(|f| BufReader::new(f).lines()) {
-        for line in lines.filter(|l| l.is_ok()).map(|l| l.unwrap()) {
-            model_inner.feed(CharTokenizer.tokenize(&line));
-        }
-    } else {
-        println!("File does not exist. u idiot. u rascal");
+fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> {
+    let path = Path::new(cmd_args.get(1).ok_or(Error::MissingArg("filename"))?);
+    let model = model.as_mut().ok_or(Error::NoModel)?;
+    let file = File::open(path)?;
+    let lines = BufReader::new(file)
+        .lines()
+        .collect::<Result<Vec<String>, std::io::Error>>()?;
+    for line in lines {
+        model.feed(CharTokenizer.tokenize(&line));
     }
     println!("File read successfully.");
+    Ok(())
 }
 
-fn feed<T>(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &T)
+fn feed<T>(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &T) -> Result<(), Error>
 where
     T: Tokenizer
-{                
-    if cmd_args.get(1).is_none() {
-        println!("No string provided. Please provide a string for feeding.");
-    } else if let Some(ref mut model_inner) = model {
-        let data = cmd_args.get(1).unwrap();
-        model_inner.feed(tokenizer.tokenize(data));
-    } else {
-        println!("No model is currently loaded. Please load or initialise a model before feeding.");
-    }
+{
+    let data = cmd_args.get(1).ok_or(Error::MissingArg("data"))?;
+    let model = model.as_mut().ok_or(Error::NoModel)?;
+    model.feed(tokenizer.tokenize(data));
+    Ok(())
 }

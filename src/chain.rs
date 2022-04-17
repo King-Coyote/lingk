@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use rand::prelude::*;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use crate::token::Token;
 use crate::util::*;
 
 #[serde_with::serde_as]
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Node {
     data: Token,
     #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
@@ -58,7 +58,7 @@ impl Node {
 }
 
 #[serde_with::serde_as]
-#[derive(Default, Serialize)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Chain {
     #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
     nodes: HashMap<Token, Node>,
