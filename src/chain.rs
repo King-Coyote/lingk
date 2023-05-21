@@ -11,6 +11,7 @@ struct Node {
     #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
     links: HashMap<Token, u32>,
     weights: Option<Vec<(Token, f32)>>,
+    weights_map: Option<HashMap<Token, f32>>,
     total: u32,
 }
 
@@ -20,6 +21,7 @@ impl Node {
             data,
             links: HashMap::default(),
             weights: None,
+            weights_map: None,
             total: 0,
         }
     }
@@ -38,13 +40,20 @@ impl Node {
             .collect::<Vec<(Token, u32)>>();
         counts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         let mut acc = 0;
-        let weights = counts
+        let weights: Vec<(Token, f32)> = counts
             .into_iter()
             .map(|(token, count)| {
                 acc += count;
                 (token, acc as f32 / self.total as f32)
             })
             .collect();
+        let mut last_weight = 0.0;
+        let mut weights_map: HashMap<Token, f32> = HashMap::new();
+        for (token, weight) in weights.iter() {
+            weights_map.insert(token.clone(), weight - last_weight);
+            last_weight = *weight;
+        }
+        self.weights_map = Some(weights_map);
         self.weights = Some(weights);
     }
 
@@ -54,6 +63,12 @@ impl Node {
             .iter()
             .find(|(_, w)| n <= *w)
             .map(|(t, _)| t.clone())
+    }
+
+    pub fn query_on(&self, b: char) -> Option<f32> {
+        self.weights_map.as_ref()?
+            .get(&Token::Char(b))
+            .copied()
     }
 }
 
@@ -109,6 +124,46 @@ impl Chain {
         value
     }
 
+    // gives the average number of neighbours for all tokens.
+    // this is kind of a measure of how good the model is; if its average is ~28,
+    // then it's probably shithouse because any token can give any token.
+    // Test it out by loading one single language, analyzing, then loading another and doing it again.
+    pub fn analyze(&self) -> Option<f32> {
+        assert!(self.is_calculated);
+        let mut total = 0;
+        for (token, node) in self.nodes.iter() {
+            if *token == Token::Start {
+                continue;
+            }
+            total += node.weights.as_ref()?
+                .iter()
+                .filter(|(token, _)| *token != Token::End)
+                .count();
+        }
+        let real_length = self.nodes.len() - 2;
+        Some((total as f32) / (real_length as f32))
+    }
+
+    // gives the weight for a transition between chars
+    // TODO all this query stuff should use tokens, not chars. knobhead
+    pub fn query_between(&self, a: char, b: char) -> Option<f32> {
+        assert!(self.is_calculated);
+        let node_a = self.nodes.get(&Token::Char(a))?;
+        let node_b = self.nodes.get(&Token::Char(b))?;
+        Some(0.0)
+    }
+
+    // returns a vec of all weights and their tokens from a single char
+    pub fn query_single(&self, a: &Token) -> Option<Vec<(Token, f32)>> {
+        assert!(self.is_calculated);
+        let node_a = self.nodes.get(&a)?;
+        // ugh! get the tuples, then explicitly clone their inner values. This is so we don't
+        // have ownership things happen. Man this is ugly :(
+        node_a.weights_map
+            .as_ref()
+            .map(|map| map.iter().map(|(k, v)| (k.clone(), *v)).collect())
+    }
+
     pub fn is_calculated(&self) -> bool {
         self.is_calculated
     }
@@ -139,7 +194,24 @@ mod tests {
 
         let weights = node.weights.expect("Node should have weights");
         assert!(weights.len() == 2);
+        assert!(weights.get(0).unwrap().0 == Token::Char('b'));
+        assert!(weights.get(1).unwrap().0 == Token::Char('a'));
         assert!(float_eq(weights.get(0).unwrap().1, 0.25));
         assert!(float_eq(weights.get(1).unwrap().1, 1.0));
+    }
+
+    #[test]
+    fn query_on_node_gives_correct_value() {
+        let mut node = Node::new(Token::Start);
+        node.link(Token::Char('a'));
+        node.link(Token::Char('a'));
+        node.link(Token::Char('a'));
+        node.link(Token::Char('b'));
+        node.calculate();
+
+        let weight_a = node.query_on('a').unwrap();
+        let weight_b = node.query_on('b').unwrap();
+        assert!(float_eq(weight_a, 0.75));
+        assert!(float_eq(weight_b, 0.25));
     }
 }

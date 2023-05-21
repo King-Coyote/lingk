@@ -4,7 +4,7 @@ use std::path::Path;
 
 use token::Tokenizer;
 
-use crate::token::CharTokenizer;
+use crate::token::{CharTokenizer, Token};
 use crate::util::*;
 use crate::chain::Chain;
 use crate::error::Error;
@@ -34,6 +34,16 @@ fn main() {
                     println!("file reading failed: {}", e);
                 }
             },
+            "query" => {
+                if let Err(e) = query(&cmd_args, &mut model) {
+                    println!("Query failed: {}", e);
+                }
+            }
+            "analyze" => {
+                if let Err(e) = analyze(&mut model) {
+                    println!("Analysis failed: {}", e);
+                }
+            }
             "gen" => {
                 if let Err(e) = generate_n(&cmd_args, &mut model) {
                     println!("Generation failed: {}", e);
@@ -97,6 +107,46 @@ fn generate_n(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), E
         }
     }
     Ok(())
+}
+
+fn analyze(model: &mut Option<Box<Chain>>) -> Result<(), Error> {
+    let model = model.as_mut().ok_or(Error::NoModel)?;
+    // TODO im sorry, why am I making the consumer of this code ensure it's calculated?
+    // there's obviously a better way to do this m8
+    if !model.is_calculated() {
+        model.calculate();
+    }
+    let analysis = model.analyze().ok_or(Error::ModelError("token not found"))?;
+    println!("Average neighbour count: {}", analysis);
+    Ok(())
+}
+
+fn query(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> {
+    let arg_a = cmd_args.get(1).ok_or(Error::MissingArg("First query char"))?;
+    let a = as_char_token(arg_a)?;
+    let model = model.as_mut().ok_or(Error::NoModel)?;
+    let arg_b = cmd_args.get(2);
+    if let Some(arg_b) = arg_b {
+        
+    } else {
+        for (token, prob) in model.query_single(&a).ok_or(Error::TokenNotFound(a))?.iter() {
+            println!("{}: {}", token.to_string(), prob);
+        }
+    }
+    Ok(())
+}
+
+fn as_char_token(str: &str) -> Result<Token, Error> {
+    if str.len() > 1 {
+        if str == "__START__" {
+            return Ok(Token::Start);
+        }
+        if str == "__END__" {
+            return Ok(Token::End);
+        }
+        return Err(Error::Tokenize(str.to_owned(), "too many characters"));
+    }
+    Ok(Token::Char(str.chars().next().unwrap()))
 }
 
 fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> {
