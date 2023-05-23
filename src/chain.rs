@@ -1,18 +1,20 @@
 use std::collections::HashMap;
+use std::cmp::max;
 use rand::prelude::*;
 use serde::{Serialize, Deserialize};
 use crate::token::Token;
 use crate::util::*;
+use crate::error::Error;
 
 #[serde_with::serde_as]
 #[derive(Serialize, Deserialize)]
 struct Node {
     data: Token,
     #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
-    links: HashMap<Token, u32>,
+    links: HashMap<Token, i32>,
     weights: Option<Vec<(Token, f32)>>,
     weights_map: Option<HashMap<Token, f32>>,
-    total: u32,
+    total: i32,
 }
 
 impl Node {
@@ -34,10 +36,24 @@ impl Node {
         self.total += 1;
     }
 
+    pub fn unlink(&mut self, token: &Token, amount: i32) -> Result<(), Error> {
+        let current = self.links.get_mut(token).ok_or(Error::TokenNotFound(token.clone()))?;
+        if amount <= *current {
+            self.total = max(self.total - amount, 0);
+        } else {
+            self.total -= *current;
+        }
+        *current = max(*current - amount, 0);
+        if *current == 0 {
+            self.links.remove(token);
+        }
+        Ok(())
+    }
+
     pub fn calculate(&mut self) {
-        let mut counts: Vec<(Token, u32)> = self.links.iter()
+        let mut counts: Vec<(Token, i32)> = self.links.iter()
             .map(|(t, c)| (t.clone(), *c))
-            .collect::<Vec<(Token, u32)>>();
+            .collect::<Vec<(Token, i32)>>();
         counts.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         let mut acc = 0;
         let weights: Vec<(Token, f32)> = counts
@@ -142,6 +158,15 @@ impl Chain {
         }
         let real_length = self.nodes.len() - 2;
         Some((total as f32) / (real_length as f32))
+    }
+
+    pub fn reduce(&mut self, a: &Token, b:&Token, amount: i32) -> Result<(), Error> {
+        assert!(self.is_calculated);
+        let node_a = self.nodes.get_mut(a).ok_or(Error::TokenNotFound(a.clone()))?;
+        node_a.unlink(b, amount)?;
+        // TODO better way of handling calculation? it's pretty incoherent rn
+        self.calculate();
+        Ok(())
     }
 
     // gives the weight for a transition between chars

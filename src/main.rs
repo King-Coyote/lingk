@@ -44,6 +44,11 @@ fn main() {
                     println!("Analysis failed: {}", e);
                 }
             }
+            "reduce" => {
+                if let Err(e) = reduce(&cmd_args, &mut model) {
+                    println!("Could not reduce model: {}", e);
+                }
+            }
             "gen" => {
                 if let Err(e) = generate_n(&cmd_args, &mut model) {
                     println!("Generation failed: {}", e);
@@ -118,6 +123,23 @@ fn analyze(model: &mut Option<Box<Chain>>) -> Result<(), Error> {
     }
     let analysis = model.analyze().ok_or(Error::ModelError("token not found"))?;
     println!("Average neighbour count: {}", analysis);
+    Ok(())
+}
+
+// reduce the model's count of that transition by amount
+fn reduce(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> {
+    let arg_a = cmd_args.get(1).ok_or(Error::MissingArg("First reduce token"))?;
+    let a = as_char_token(arg_a)?;
+    let arg_b = cmd_args.get(2).ok_or(Error::MissingArg("Second reduce char"))?;
+    let b = as_char_token(arg_b)?;
+    let amount = cmd_args.get(3)
+        .map(|arg| arg.parse::<i32>())
+        .ok_or(Error::MissingArg("amount to reduce by"))??;
+    let model = model.as_mut().ok_or(Error::NoModel)?;
+    if !model.is_calculated() {
+        model.calculate();
+    }
+    model.reduce(&a, &b, amount)?;
     Ok(())
 }
 
