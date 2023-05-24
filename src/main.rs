@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-use token::Tokenizer;
+use token::{Tokenizer, PositionalCharTokenizer};
 
 use crate::token::{CharTokenizer, Token};
 use crate::util::*;
@@ -17,6 +17,7 @@ pub mod error;
 fn main() {
     println!("Welcome to lingk, a markov chain language-imitating... thing.");
     let mut model: Option<Box<Chain>> = None;
+    let mut tokenizer: Box<dyn Tokenizer> = Box::new(PositionalCharTokenizer);
     do_while_input(|input| {
         let cmd_args: Vec<&str> = input.trim().split(' ').collect();
         match *cmd_args.get(0).unwrap_or(&"") {
@@ -24,13 +25,22 @@ fn main() {
                 model = Some(Box::new(Chain::default()));
                 println!("New chain model initialised, congratulations King xoxo");
             },
+            "tokenizer" => {
+                match new_tokenizer(&cmd_args) {
+                    Ok(new_tokenizer) => {
+                        tokenizer = new_tokenizer;
+                        println!("tokenizer initialized!");
+                    },
+                    Err(err) => println!("tokenizer creation failed: {}", err),
+                }
+            },
             "feed" => {
-                if let Err(e) = feed(&cmd_args, &mut model, &CharTokenizer) {
+                if let Err(e) = feed(&cmd_args, &mut model, &*tokenizer) {
                     println!("feeding failed: {}", e);
                 }
             },
             "file" => {
-                if let Err(e) = file(&cmd_args, &mut model) {
+                if let Err(e) = file(&cmd_args, &mut model, &*tokenizer) {
                     println!("file reading failed: {}", e);
                 }
             },
@@ -84,6 +94,15 @@ fn main() {
     });
 }
 
+fn new_tokenizer(cmd_args: &[&str]) -> Result<Box<dyn Tokenizer>, Error> {
+    let model_type = cmd_args.get(1).unwrap_or(&"char");
+    match *model_type {
+        "positional_char" => Ok(Box::new(PositionalCharTokenizer)),
+        "char" => Ok(Box::new(CharTokenizer)),
+        _ => Err(Error::MissingArg("invalid tokenizer arg provided")),
+    }
+}
+
 fn save(cmd_args: &[&str], model: &Option<Box<Chain>>) -> Result<(), Error> {
     let filename = cmd_args.get(1).ok_or(Error::MissingArg("filename"))?;
     let model = model.as_ref().ok_or(Error::NoModel)?;
@@ -94,7 +113,7 @@ fn save(cmd_args: &[&str], model: &Option<Box<Chain>>) -> Result<(), Error> {
 
 fn load(cmd_args: &[&str]) -> Result<Box<Chain>, Error> {
     let filename = cmd_args.get(1).ok_or(Error::MissingArg("filename"))?;
-    let data = fs::read_to_string(&filename)?;
+    let data = fs::read_to_string(filename)?;
     let model = serde_json::from_str(&data)?;
     Ok(model)
 }
@@ -171,7 +190,7 @@ fn as_char_token(str: &str) -> Result<Token, Error> {
     Ok(Token::Char(str.chars().next().unwrap()))
 }
 
-fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> {
+fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &dyn Tokenizer) -> Result<(), Error> {
     let path = Path::new(cmd_args.get(1).ok_or(Error::MissingArg("filename"))?);
     let model = model.as_mut().ok_or(Error::NoModel)?;
     let file = File::open(path)?;
@@ -179,16 +198,13 @@ fn file(cmd_args: &[&str], model: &mut Option<Box<Chain>>) -> Result<(), Error> 
         .lines()
         .collect::<Result<Vec<String>, std::io::Error>>()?;
     for line in lines {
-        model.feed(CharTokenizer.tokenize(&line));
+        model.feed(tokenizer.tokenize(&line));
     }
     println!("File read successfully.");
     Ok(())
 }
 
-fn feed<T>(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &T) -> Result<(), Error>
-where
-    T: Tokenizer
-{
+fn feed(cmd_args: &[&str], model: &mut Option<Box<Chain>>, tokenizer: &dyn Tokenizer) -> Result<(), Error> {
     let data = cmd_args.get(1).ok_or(Error::MissingArg("data"))?;
     let model = model.as_mut().ok_or(Error::NoModel)?;
     model.feed(tokenizer.tokenize(data));
