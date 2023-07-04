@@ -12,7 +12,9 @@ struct Node {
     data: Token,
     #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
     links: HashMap<Token, i32>,
+    #[serde(skip_serializing, default)]
     weights: Option<Vec<(Token, f32)>>,
+    #[serde(skip_serializing, default)]
     weights_map: Option<HashMap<Token, f32>>,
     total: i32,
 }
@@ -93,6 +95,7 @@ impl Node {
 pub struct Chain {
     #[serde_as(as = "HashMap<serde_with::json::JsonString, _>")]
     nodes: HashMap<Token, Node>,
+    #[serde(skip_serializing, default)]
     is_calculated: bool,
 }
 
